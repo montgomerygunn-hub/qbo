@@ -16,17 +16,32 @@ const DATA_DIR = process.env.DATA_DIR
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 const INDEX_PATH = path.join(DATA_DIR, 'index.json');
 
-// ---------- optional basic auth ----------
-// Set QBO_USER and QBO_PASS as environment variables in the GoDaddy Node.js
-// Hosting dashboard to require a login. If either is unset, auth is skipped
-// (useful for local testing) but you should set both before going live,
-// since this app handles real bank transaction data.
-const AUTH_USER = process.env.QBO_USER;
-const AUTH_PASS = process.env.QBO_PASS;
+// ---------- basic auth, multi-user ----------
+// Set QBO_USERS as an environment variable to allow multiple separate
+// logins, formatted as: user1:pass1,user2:pass2,user3:pass3
+// (no spaces around the colon or comma). Each person gets their own
+// username/password rather than sharing one.
+//
+// The original single-user QBO_USER / QBO_PASS variables still work too,
+// and are merged in automatically -- you don't have to remove them.
+const CREDENTIALS = {};
+if (process.env.QBO_USERS) {
+  process.env.QBO_USERS.split(',').forEach((pair) => {
+    const idx = pair.indexOf(':');
+    if (idx === -1) return;
+    const user = pair.slice(0, idx).trim();
+    const pass = pair.slice(idx + 1).trim();
+    if (user && pass) CREDENTIALS[user] = pass;
+  });
+}
+if (process.env.QBO_USER && process.env.QBO_PASS) {
+  CREDENTIALS[process.env.QBO_USER] = process.env.QBO_PASS;
+}
+const AUTH_ENABLED = Object.keys(CREDENTIALS).length > 0;
 
 app.use((req, res, next) => {
   if (req.path === '/api/health') return next();
-  if (!AUTH_USER || !AUTH_PASS) return next();
+  if (!AUTH_ENABLED) return next();
   const header = req.headers.authorization || '';
   const [scheme, encoded] = header.split(' ');
   if (scheme === 'Basic' && encoded) {
@@ -34,7 +49,10 @@ app.use((req, res, next) => {
     const idx = decoded.indexOf(':');
     const user = decoded.slice(0, idx);
     const pass = decoded.slice(idx + 1);
-    if (user === AUTH_USER && pass === AUTH_PASS) return next();
+    if (CREDENTIALS[user] && CREDENTIALS[user] === pass) {
+      req.qboUser = user;
+      return next();
+    }
   }
   res.set('WWW-Authenticate', 'Basic realm="QBO Dedup"');
   res.status(401).send('Authentication required.');
@@ -157,6 +175,7 @@ app.get('/api/accounts', (req, res) => {
       label: ledger.label || key,
       count: Object.keys(ledger.seen || {}).length,
       lastRun: ledger.lastRun || null,
+      lastProcessedBy: ledger.lastProcessedBy || null,
     };
   });
   res.json({ accounts });
@@ -205,6 +224,7 @@ app.post('/api/process', upload.single('file'), (req, res) => {
     ledger.seen = seen;
     ledger.label = label || ledger.label || detected;
     ledger.lastRun = new Date().toISOString();
+    ledger.lastProcessedBy = req.qboUser || null;
     saveLedger(accountKey, ledger);
 
     const idx = loadIndex();
