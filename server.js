@@ -140,7 +140,11 @@ app.post('/api/process', upload.single('file'), (req, res) => {
 
     const detected = detectAccountKey(text);
     const label = (req.body.label || '').trim();
-    const accountKey = label || detected;
+    // The auto-detected bank ID / account number is the reliable identity key
+    // -- it comes straight from the file and can't be typo'd. The label is
+    // only used as identity when detection genuinely fails (rare), so a
+    // mislabeled upload can never accidentally split an account's history.
+    const accountKey = detected || label;
 
     if (!accountKey) {
       return res.status(400).json({ error: 'Could not identify the account from this file. Provide an account label and try again.' });

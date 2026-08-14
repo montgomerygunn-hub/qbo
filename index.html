@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QBO transaction deduplicator</title>
+<style>
+  :root{
+    --paper:#FAF9F5; --ink:#1E2A38; --ink-soft:#5B6B7C; --line:#DAD6C9;
+    --line-strong:#B9B4A2; --teal:#0F6E56; --teal-bg:#E1F5EE;
+    --amber:#854F0B; --amber-bg:#FAEEDA;
+    --mono: ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+    --serif: Georgia, 'Times New Roman', serif;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  body{ margin:0; background:#F0EEE6; font-family:var(--sans); padding:40px 20px; }
+  .qd-wrap{ background:var(--paper); color:var(--ink); border:1px solid var(--line); border-radius:10px;
+    padding:28px 30px 24px; max-width:720px; margin:0 auto; }
+  .qd-eyebrow{ font-family:var(--mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--ink-soft); margin:0 0 4px; }
+  .qd-title{ font-family:var(--serif); font-size:23px; font-weight:600; margin:0 0 4px; color:var(--ink); }
+  .qd-sub{ font-size:13.5px; color:var(--ink-soft); margin:0 0 22px; line-height:1.5; }
+  .qd-drop{ border:1.5px dashed var(--line-strong); border-radius:8px; padding:26px 20px; text-align:center;
+    cursor:pointer; transition:border-color .15s, background .15s; }
+  .qd-drop:hover, .qd-drop.qd-drag{ border-color:var(--teal); background:var(--teal-bg); }
+  .qd-drop-label{ font-size:14px; color:var(--ink); margin:0 0 3px; }
+  .qd-drop-hint{ font-size:12px; color:var(--ink-soft); margin:0; font-family:var(--mono); }
+  .qd-filename{ font-family:var(--mono); font-size:12.5px; color:var(--teal); margin-top:8px; }
+  .qd-row{ display:flex; gap:12px; align-items:flex-end; margin-top:16px; flex-wrap:wrap; }
+  .qd-field{ flex:1; min-width:200px; }
+  .qd-field label{ display:block; font-size:11.5px; color:var(--ink-soft); margin-bottom:5px; font-family:var(--mono); text-transform:uppercase; letter-spacing:.05em; }
+  .qd-field input[type=text]{ width:100%; box-sizing:border-box; padding:8px 10px; border:1px solid var(--line-strong);
+    border-radius:6px; font-size:13.5px; font-family:var(--sans); background:#fff; color:var(--ink); }
+  .qd-field input[type=text]:focus{ outline:none; border-color:var(--teal); box-shadow:0 0 0 2px var(--teal-bg); }
+  .qd-btn{ padding:9px 18px; border-radius:6px; border:1px solid var(--ink); background:var(--ink); color:var(--paper);
+    font-size:13.5px; cursor:pointer; font-family:var(--sans); }
+  .qd-btn:disabled{ opacity:.4; cursor:not-allowed; }
+  .qd-btn:not(:disabled):hover{ background:#33465C; }
+  .qd-err{ font-size:13px; color:#A32D2D; margin-top:12px; }
+  .qd-results{ margin-top:24px; border-top:1px solid var(--line); padding-top:18px; }
+  .qd-stat-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:16px; }
+  .qd-stat{ background:#fff; border:1px solid var(--line); border-radius:7px; padding:10px 12px; }
+  .qd-stat .n{ font-family:var(--mono); font-size:20px; font-weight:600; }
+  .qd-stat .l{ font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.04em; margin-top:2px; }
+  .qd-stat.new .n{ color:var(--teal); }
+  .qd-stat.dupe .n{ color:var(--amber); }
+  .qd-txn-list{ max-height:220px; overflow-y:auto; border:1px solid var(--line); border-radius:7px; background:#fff; }
+  .qd-txn{ display:flex; justify-content:space-between; gap:10px; padding:7px 12px; font-family:var(--mono); font-size:12px;
+    border-bottom:1px solid var(--line); }
+  .qd-txn:last-child{ border-bottom:none; }
+  .qd-txn.dupe{ background:var(--amber-bg); color:var(--amber); }
+  .qd-txn.new{ background:var(--teal-bg); color:var(--teal); }
+  .qd-txn .nm{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
+  .qd-txn .tag{ font-size:10px; text-transform:uppercase; letter-spacing:.04em; font-weight:600; }
+  .qd-download{ margin-top:16px; display:flex; gap:10px; align-items:center; }
+  .qd-account-tag{ font-family:var(--mono); font-size:12px; color:var(--ink-soft); margin-top:14px; }
+  .qd-ledger-toggle{ font-size:12px; color:var(--ink-soft); text-decoration:underline; cursor:pointer; margin-top:18px; display:inline-block; background:none; border:none; padding:0; }
+  .qd-ledger-panel{ margin-top:10px; font-size:12.5px; }
+  .qd-ledger-panel table{ width:100%; border-collapse:collapse; }
+  .qd-ledger-panel td{ padding:5px 8px; border-bottom:1px solid var(--line); font-family:var(--mono); }
+  .qd-ledger-panel td.n{ text-align:right; color:var(--ink-soft); }
+  .qd-hidden{ display:none; }
+</style>
+</head>
+<body>
+
+<div class="qd-wrap">
+  <p class="qd-eyebrow">KKBM &middot; Walk-On's accounting</p>
+  <h2 class="qd-title">QBO transaction deduplicator</h2>
+  <p class="qd-sub">Upload a .qbo file downloaded from the bank. Transactions already seen in a prior upload for this account are filtered out &mdash; you get back a file with only the new activity, ready to import into QBO.</p>
+
+  <div class="qd-drop" id="qd-drop">
+    <p class="qd-drop-label">Drop a .qbo file here, or click to choose one</p>
+    <p class="qd-drop-hint">.qbo / .ofx</p>
+    <div class="qd-filename" id="qd-filename"></div>
+  </div>
+  <input type="file" id="qd-file-input" accept=".qbo,.ofx" style="display:none">
+
+  <div class="qd-row">
+    <div class="qd-field">
+      <label for="qd-label">Account nickname (optional)</label>
+      <input type="text" id="qd-label" placeholder="e.g. Cypress Amex">
+    </div>
+    <button class="qd-btn" id="qd-process" disabled>Process file</button>
+  </div>
+
+  <div class="qd-err qd-hidden" id="qd-err"></div>
+
+  <div class="qd-results qd-hidden" id="qd-results">
+    <div class="qd-account-tag" id="qd-account-tag"></div>
+    <div class="qd-stat-grid">
+      <div class="qd-stat"><div class="n" id="qd-stat-total">0</div><div class="l">Total in file</div></div>
+      <div class="qd-stat dupe"><div class="n" id="qd-stat-dupe">0</div><div class="l">Already imported</div></div>
+      <div class="qd-stat new"><div class="n" id="qd-stat-new">0</div><div class="l">New</div></div>
+    </div>
+    <div class="qd-txn-list" id="qd-txn-list"></div>
+    <div class="qd-download qd-hidden" id="qd-download-row">
+      <button class="qd-btn" id="qd-download-btn">Download new-only .qbo</button>
+      <span style="font-size:12px;color:var(--ink-soft)" id="qd-download-name"></span>
+    </div>
+  </div>
+
+  <button class="qd-ledger-toggle" id="qd-ledger-toggle">View accounts with saved history</button>
+  <div class="qd-ledger-panel qd-hidden" id="qd-ledger-panel"></div>
+</div>
+
+<script>
+(function(){
+  var fileInput = document.getElementById('qd-file-input');
+  var drop = document.getElementById('qd-drop');
+  var filenameEl = document.getElementById('qd-filename');
+  var labelInput = document.getElementById('qd-label');
+  var processBtn = document.getElementById('qd-process');
+  var errEl = document.getElementById('qd-err');
+  var resultsEl = document.getElementById('qd-results');
+  var accountTagEl = document.getElementById('qd-account-tag');
+  var statTotal = document.getElementById('qd-stat-total');
+  var statDupe = document.getElementById('qd-stat-dupe');
+  var statNew = document.getElementById('qd-stat-new');
+  var txnListEl = document.getElementById('qd-txn-list');
+  var downloadRow = document.getElementById('qd-download-row');
+  var downloadBtn = document.getElementById('qd-download-btn');
+  var downloadNameEl = document.getElementById('qd-download-name');
+  var ledgerToggle = document.getElementById('qd-ledger-toggle');
+  var ledgerPanel = document.getElementById('qd-ledger-panel');
+
+  var currentFile = null;
+  var outputBlob = null;
+  var outputName = null;
+
+  function showError(msg){ errEl.textContent = msg; errEl.classList.remove('qd-hidden'); }
+  function clearError(){ errEl.classList.add('qd-hidden'); errEl.textContent = ''; }
+
+  drop.addEventListener('click', function(){ fileInput.click(); });
+  drop.addEventListener('dragover', function(e){ e.preventDefault(); drop.classList.add('qd-drag'); });
+  drop.addEventListener('dragleave', function(){ drop.classList.remove('qd-drag'); });
+  drop.addEventListener('drop', function(e){
+    e.preventDefault();
+    drop.classList.remove('qd-drag');
+    if(e.dataTransfer.files && e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change', function(){
+    if(fileInput.files && fileInput.files[0]) handleFile(fileInput.files[0]);
+  });
+
+  function handleFile(file){
+    currentFile = file;
+    filenameEl.textContent = file.name;
+    processBtn.disabled = false;
+    clearError();
+    resultsEl.classList.add('qd-hidden');
+  }
+
+  processBtn.addEventListener('click', async function(){
+    clearError();
+    if(!currentFile) return;
+    processBtn.disabled = true;
+    processBtn.textContent = 'Processing…';
+
+    try{
+      var form = new FormData();
+      form.append('file', currentFile);
+      form.append('label', labelInput.value.trim());
+
+      var resp = await fetch('/api/process', { method: 'POST', body: form });
+      var data = await resp.json();
+
+      if(!resp.ok){
+        showError(data.error || 'Something went wrong.');
+        processBtn.disabled = false; processBtn.textContent = 'Process file';
+        return;
+      }
+
+      accountTagEl.textContent = 'Account: ' + data.accountKey;
+      statTotal.textContent = data.total;
+      statDupe.textContent = data.dupeCount;
+      statNew.textContent = data.newCount;
+
+      txnListEl.innerHTML = '';
+      data.transactions.forEach(function(t){
+        var row = document.createElement('div');
+        row.className = 'qd-txn ' + (t.isDupe ? 'dupe' : 'new');
+        var nm = document.createElement('span');
+        nm.className = 'nm';
+        nm.textContent = (t.name || '(no name)') + '  ' + (t.amount || '');
+        var tag = document.createElement('span');
+        tag.className = 'tag';
+        tag.textContent = t.isDupe ? 'already imported' : 'new';
+        row.appendChild(nm); row.appendChild(tag);
+        txnListEl.appendChild(row);
+      });
+
+      if(data.outputText){
+        outputBlob = new Blob([data.outputText], { type: 'application/x-ofx' });
+        outputName = data.outputFilename;
+        downloadRow.classList.remove('qd-hidden');
+        downloadNameEl.textContent = outputName;
+      } else {
+        downloadRow.classList.add('qd-hidden');
+        outputBlob = null;
+      }
+
+      resultsEl.classList.remove('qd-hidden');
+    }catch(e){
+      showError('Network or server error: ' + e.message);
+    }
+    processBtn.disabled = false;
+    processBtn.textContent = 'Process file';
+  });
+
+  downloadBtn.addEventListener('click', function(){
+    if(!outputBlob) return;
+    var url = URL.createObjectURL(outputBlob);
+    var a = document.createElement('a');
+    a.href = url; a.download = outputName;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+
+  ledgerToggle.addEventListener('click', async function(){
+    if(!ledgerPanel.classList.contains('qd-hidden')){
+      ledgerPanel.classList.add('qd-hidden');
+      ledgerToggle.textContent = 'View accounts with saved history';
+      return;
+    }
+    ledgerToggle.textContent = 'Loading…';
+    try{
+      var resp = await fetch('/api/accounts');
+      var data = await resp.json();
+      if(!data.accounts || data.accounts.length === 0){
+        ledgerPanel.innerHTML = '<p style="color:var(--ink-soft)">No accounts processed yet.</p>';
+      } else {
+        var rows = data.accounts.map(function(a){
+          return '<tr><td>' + a.label + '</td><td class="n">' + a.count + ' transactions on file</td></tr>';
+        });
+        ledgerPanel.innerHTML = '<table>' + rows.join('') + '</table>';
+      }
+    }catch(e){
+      ledgerPanel.innerHTML = '<p style="color:#A32D2D">Could not load account list.</p>';
+    }
+    ledgerPanel.classList.remove('qd-hidden');
+    ledgerToggle.textContent = 'Hide accounts';
+  });
+})();
+</script>
+</body>
+</html>
