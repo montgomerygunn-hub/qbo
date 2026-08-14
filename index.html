@@ -101,6 +101,7 @@
   </div>
 
   <button class="qd-ledger-toggle" id="qd-ledger-toggle">View accounts with saved history</button>
+  <button class="qd-ledger-toggle" id="qd-reset-btn" style="color:#A32D2D; margin-left:16px;">Reset all history</button>
   <div class="qd-ledger-panel qd-hidden" id="qd-ledger-panel"></div>
 </div>
 
@@ -123,6 +124,29 @@
   var downloadNameEl = document.getElementById('qd-download-name');
   var ledgerToggle = document.getElementById('qd-ledger-toggle');
   var ledgerPanel = document.getElementById('qd-ledger-panel');
+  var resetBtn = document.getElementById('qd-reset-btn');
+
+  resetBtn.addEventListener('click', async function(){
+    var confirmed = confirm('This permanently deletes ALL saved account history for every account. Future uploads will start from scratch with no duplicate protection until new history builds up again. Are you sure?');
+    if(!confirmed) return;
+    resetBtn.disabled = true;
+    resetBtn.textContent = 'Resetting…';
+    try{
+      var resp = await fetch('/api/reset', { method: 'POST' });
+      var data = await resp.json();
+      if(resp.ok){
+        alert('Done. Removed ' + data.filesRemoved + ' file(s). All account history has been cleared.');
+        ledgerPanel.classList.add('qd-hidden');
+        ledgerToggle.textContent = 'View accounts with saved history';
+      } else {
+        alert('Reset failed: ' + (data.error || 'unknown error'));
+      }
+    }catch(e){
+      alert('Reset failed: ' + e.message);
+    }
+    resetBtn.disabled = false;
+    resetBtn.textContent = 'Reset all history';
+  });
 
   var currentFile = null;
   var outputBlob = null;

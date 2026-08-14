@@ -114,6 +114,19 @@ function saveIndex(idx) {
 // ---------- routes ----------
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
+// Wipes all stored account history. Protected by the same login as
+// everything else (this route is not exempted from the auth middleware
+// above). Intended for resetting during setup/testing.
+app.post('/api/reset', (req, res) => {
+  try {
+    const files = fs.readdirSync(DATA_DIR);
+    files.forEach((f) => fs.unlinkSync(path.join(DATA_DIR, f)));
+    res.json({ ok: true, filesRemoved: files.length });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not reset: ' + e.message });
+  }
+});
+
 app.get('/api/accounts', (req, res) => {
   const idx = loadIndex();
   const accounts = idx.accounts.map((key) => {
