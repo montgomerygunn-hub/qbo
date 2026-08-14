@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: kkbm-qbo-dedup
+    runtime: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: DATA_DIR
+        value: /var/data
+      - key: QBO_USER
+        sync: false
+      - key: QBO_PASS
+        sync: false
+    disk:
+      name: qbo-ledger-data
+      mountPath: /var/data
+      sizeGB: 1
