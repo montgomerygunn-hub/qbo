@@ -25,6 +25,7 @@ const AUTH_USER = process.env.QBO_USER;
 const AUTH_PASS = process.env.QBO_PASS;
 
 app.use((req, res, next) => {
+  if (req.path === '/api/health') return next();
   if (!AUTH_USER || !AUTH_PASS) return next();
   const header = req.headers.authorization || '';
   const [scheme, encoded] = header.split(' ');
