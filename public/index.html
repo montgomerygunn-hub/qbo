@@ -256,7 +256,7 @@
         tdLabel.textContent = a.label;
         var tdCount = document.createElement('td');
         tdCount.className = 'n';
-        tdCount.textContent = a.count + ' transactions on file';
+        tdCount.textContent = a.count + ' transactions on file' + (a.lastProcessedBy ? ' \u2014 last by ' + a.lastProcessedBy : '');
         var tdAction = document.createElement('td');
         tdAction.style.textAlign = 'right';
         var resetLink = document.createElement('button');
