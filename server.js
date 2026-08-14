@@ -6,10 +6,13 @@ const path = require('path');
 const app = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
-// GoDaddy Node.js Hosting only persists files written to /public/assets/
-// between deployments -- everything else is wiped on redeploy. Ledger data
-// MUST live under here or account history will be lost on the next upload.
-const DATA_DIR = path.join(__dirname, 'public', 'assets', 'data');
+// Storage location for the transaction ledger. On Render, this should point
+// at the mounted persistent disk (e.g. DATA_DIR=/var/data) so history
+// survives restarts and redeploys. Falls back to a local ./data folder for
+// local testing.
+const DATA_DIR = process.env.DATA_DIR
+  ? path.resolve(process.env.DATA_DIR)
+  : path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 const INDEX_PATH = path.join(DATA_DIR, 'index.json');
 
