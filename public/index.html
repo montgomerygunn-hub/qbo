@@ -59,6 +59,8 @@
   .qd-ledger-panel table{ width:100%; border-collapse:collapse; }
   .qd-ledger-panel td{ padding:5px 8px; border-bottom:1px solid var(--line); font-family:var(--mono); }
   .qd-ledger-panel td.n{ text-align:right; color:var(--ink-soft); }
+  .qd-reset-link{ color:#A32D2D; text-decoration:underline; cursor:pointer; font-size:11.5px; background:none; border:none; padding:0; font-family:var(--sans); }
+  .qd-reset-all-row{ margin-top:12px; padding-top:10px; border-top:1px solid var(--line); }
   .qd-hidden{ display:none; }
 </style>
 </head>
@@ -78,7 +80,7 @@
 
   <div class="qd-row">
     <div class="qd-field">
-      <label for="qd-label">Account label (optional override)</label>
+      <label for="qd-label">Account nickname (optional)</label>
       <input type="text" id="qd-label" placeholder="e.g. Cypress Amex">
     </div>
     <button class="qd-btn" id="qd-process" disabled>Process file</button>
@@ -217,6 +219,82 @@
     URL.revokeObjectURL(url);
   });
 
+  async function doReset(payload, confirmMsg, successMsg){
+    var confirmed = confirm(confirmMsg);
+    if(!confirmed) return;
+    try{
+      var resp = await fetch('/api/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      var data = await resp.json();
+      if(resp.ok){
+        alert(successMsg);
+        loadLedgerPanel();
+      } else {
+        alert('Reset failed: ' + (data.error || 'unknown error'));
+      }
+    }catch(e){
+      alert('Reset failed: ' + e.message);
+    }
+  }
+
+  async function loadLedgerPanel(){
+    ledgerPanel.innerHTML = '<p style="color:var(--ink-soft)">Loading…</p>';
+    try{
+      var resp = await fetch('/api/accounts');
+      var data = await resp.json();
+      if(!data.accounts || data.accounts.length === 0){
+        ledgerPanel.innerHTML = '<p style="color:var(--ink-soft)">No accounts processed yet.</p>';
+        return;
+      }
+      var table = document.createElement('table');
+      data.accounts.forEach(function(a){
+        var tr = document.createElement('tr');
+        var tdLabel = document.createElement('td');
+        tdLabel.textContent = a.label;
+        var tdCount = document.createElement('td');
+        tdCount.className = 'n';
+        tdCount.textContent = a.count + ' transactions on file';
+        var tdAction = document.createElement('td');
+        tdAction.style.textAlign = 'right';
+        var resetLink = document.createElement('button');
+        resetLink.className = 'qd-reset-link';
+        resetLink.textContent = 'Reset';
+        resetLink.addEventListener('click', function(){
+          doReset(
+            { accountKey: a.key },
+            'This clears saved history for just "' + a.label + '" (' + a.count + ' transactions on file). Other accounts are unaffected. Future uploads for this account will start from scratch. Continue?',
+            'Done. History cleared for "' + a.label + '".'
+          );
+        });
+        tdAction.appendChild(resetLink);
+        tr.appendChild(tdLabel); tr.appendChild(tdCount); tr.appendChild(tdAction);
+        table.appendChild(tr);
+      });
+      ledgerPanel.innerHTML = '';
+      ledgerPanel.appendChild(table);
+
+      var resetAllRow = document.createElement('div');
+      resetAllRow.className = 'qd-reset-all-row';
+      var resetAllBtn = document.createElement('button');
+      resetAllBtn.className = 'qd-reset-link';
+      resetAllBtn.textContent = 'Reset ALL accounts';
+      resetAllBtn.addEventListener('click', function(){
+        doReset(
+          { all: true },
+          'This permanently deletes saved history for EVERY account (' + data.accounts.length + ' accounts total). Future uploads will start from scratch with no duplicate protection until new history builds up again. Are you sure?',
+          'Done. History cleared for all accounts.'
+        );
+      });
+      resetAllRow.appendChild(resetAllBtn);
+      ledgerPanel.appendChild(resetAllRow);
+    }catch(e){
+      ledgerPanel.innerHTML = '<p style="color:#A32D2D">Could not load account list.</p>';
+    }
+  }
+
   ledgerToggle.addEventListener('click', async function(){
     if(!ledgerPanel.classList.contains('qd-hidden')){
       ledgerPanel.classList.add('qd-hidden');
@@ -224,20 +302,7 @@
       return;
     }
     ledgerToggle.textContent = 'Loading…';
-    try{
-      var resp = await fetch('/api/accounts');
-      var data = await resp.json();
-      if(!data.accounts || data.accounts.length === 0){
-        ledgerPanel.innerHTML = '<p style="color:var(--ink-soft)">No accounts processed yet.</p>';
-      } else {
-        var rows = data.accounts.map(function(a){
-          return '<tr><td>' + a.label + '</td><td class="n">' + a.count + ' transactions on file</td></tr>';
-        });
-        ledgerPanel.innerHTML = '<table>' + rows.join('') + '</table>';
-      }
-    }catch(e){
-      ledgerPanel.innerHTML = '<p style="color:#A32D2D">Could not load account list.</p>';
-    }
+    await loadLedgerPanel();
     ledgerPanel.classList.remove('qd-hidden');
     ledgerToggle.textContent = 'Hide accounts';
   });
