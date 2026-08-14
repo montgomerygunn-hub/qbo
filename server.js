@@ -114,14 +114,35 @@ function saveIndex(idx) {
 // ---------- routes ----------
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
-// Wipes all stored account history. Protected by the same login as
-// everything else (this route is not exempted from the auth middleware
-// above). Intended for resetting during setup/testing.
+// Wipes stored account history. Protected by the same login as everything
+// else (this route is not exempted from the auth middleware above).
+// Body: { accountKey: "..." } resets just that one account.
+// Body: { all: true } resets every account. Exactly one must be provided,
+// so a reset can never happen by accident without being explicit about scope.
 app.post('/api/reset', (req, res) => {
   try {
-    const files = fs.readdirSync(DATA_DIR);
-    files.forEach((f) => fs.unlinkSync(path.join(DATA_DIR, f)));
-    res.json({ ok: true, filesRemoved: files.length });
+    const { accountKey, all } = req.body || {};
+
+    if (all === true) {
+      const files = fs.readdirSync(DATA_DIR);
+      files.forEach((f) => fs.unlinkSync(path.join(DATA_DIR, f)));
+      return res.json({ ok: true, scope: 'all', filesRemoved: files.length });
+    }
+
+    if (accountKey) {
+      const p = ledgerPath(accountKey);
+      let removed = 0;
+      if (fs.existsSync(p)) {
+        fs.unlinkSync(p);
+        removed = 1;
+      }
+      const idx = loadIndex();
+      idx.accounts = idx.accounts.filter((k) => k !== accountKey);
+      saveIndex(idx);
+      return res.json({ ok: true, scope: 'account', accountKey, filesRemoved: removed });
+    }
+
+    return res.status(400).json({ error: 'Must specify either accountKey or all:true.' });
   } catch (e) {
     res.status(500).json({ error: 'Could not reset: ' + e.message });
   }
