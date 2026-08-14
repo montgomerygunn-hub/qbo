@@ -1,0 +1,14 @@
+{
+  "name": "kkbm-qbo-dedup",
+  "version": "1.0.0",
+  "description": "QBO transaction deduplicator for KKBM / Walk-On's bank downloads",
+  "main": "server.js",
+  "scripts": {
+    "build": "echo build",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "multer": "^2.0.0"
+  }
+}
