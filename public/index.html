@@ -97,7 +97,7 @@
     </div>
     <div class="qd-txn-list" id="qd-txn-list"></div>
     <div class="qd-download qd-hidden" id="qd-download-row">
-      <button class="qd-btn" id="qd-download-btn">Download new-only .qbo</button>
+      <button class="qd-btn" id="qd-download-btn">Download again</button>
       <span style="font-size:12px;color:var(--ink-soft)" id="qd-download-name"></span>
     </div>
   </div>
@@ -195,11 +195,16 @@
       if(data.outputText){
         outputBlob = new Blob([data.outputText], { type: 'application/x-ofx' });
         outputName = data.outputFilename;
+        downloadBtn.classList.remove('qd-hidden');
         downloadRow.classList.remove('qd-hidden');
-        downloadNameEl.textContent = outputName;
+        downloadNameEl.textContent = 'Downloaded automatically: ' + outputName;
+        // Download the new-only file right away so it can't be forgotten.
+        triggerDownload();
       } else {
-        downloadRow.classList.add('qd-hidden');
         outputBlob = null;
+        downloadBtn.classList.add('qd-hidden');
+        downloadNameEl.textContent = 'No new transactions — everything in this file was already imported, so nothing was downloaded.';
+        downloadRow.classList.remove('qd-hidden');
       }
 
       resultsEl.classList.remove('qd-hidden');
@@ -210,14 +215,17 @@
     processBtn.textContent = 'Process file';
   });
 
-  downloadBtn.addEventListener('click', function(){
+  function triggerDownload(){
     if(!outputBlob) return;
     var url = URL.createObjectURL(outputBlob);
     var a = document.createElement('a');
     a.href = url; a.download = outputName;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  });
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+  }
+
+  // Manual button kept as a backup in case the browser blocks the automatic download.
+  downloadBtn.addEventListener('click', triggerDownload);
 
   async function doReset(payload, confirmMsg, successMsg){
     var confirmed = confirm(confirmMsg);
